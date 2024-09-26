@@ -41,29 +41,76 @@ db.schema.hasTable('feedback').then((exists) => {
       table.integer('matchId').unsigned().references('id').inTable('DBLog_Matches');
       table.string('hashedUserId');
       table.integer('rating');
-      table.string('removeLayer');
+      table.string('userTeam');
+      table.boolean('removeLayer');
+      table.text('removalReason');
       table.text('matchupConcerns');
       table.text('additionalComments');
       table.timestamp('timestamp').defaultTo(db.fn.now());
+    });
+  } else {
+    // Check if the userTeam column exists, if not, add it
+    return db.schema.hasColumn('feedback', 'userTeam').then(exists => {
+      if (!exists) {
+        return db.schema.table('feedback', table => {
+          table.string('userTeam');
+        });
+      }
     });
   }
 });
 
 async function saveMatchData(matchData) {
-  // Convert isDraw from string to boolean
-  matchData.isDraw = matchData.isDraw === '1';
-  
-  // Convert numeric strings to integers
-  matchData.tickets = parseInt(matchData.tickets, 10);
-  matchData.winnerTeamID = parseInt(matchData.winnerTeamID, 10);
-  matchData.server = parseInt(matchData.server, 10);
+  try {
+    // Remove the 'id' field from matchData if it exists
+    const { id, ...dataToInsert } = matchData;
 
-  const [matchId] = await db('DBLog_Matches').insert(matchData).returning('id');
-  return matchId;
+    const [insertedId] = await db('DBLog_Matches').insert(dataToInsert);
+    return insertedId;
+  } catch (error) {
+    console.error('Error saving match data:', error);
+    throw error;
+  }
 }
 
 async function saveUserFeedback(feedbackData) {
-  await db('feedback').insert(feedbackData);
+  try {
+    await db('feedback').insert(feedbackData);
+  } catch (error) {
+    console.error('Error saving user feedback:', error);
+    throw error;
+  }
 }
 
-module.exports = { db, saveMatchData, saveUserFeedback };
+async function fetchMatchData(matchId) {
+  try {
+    const matchData = await db('DBLog_Matches').where('id', matchId).first();
+    if (!matchData) {
+      throw new Error(`Match with ID ${matchId} not found`);
+    }
+    return matchData;
+  } catch (error) {
+    console.error('Error fetching match data:', error);
+    throw error;
+  }
+}
+
+async function checkExistingFeedback(matchId, hashedUserId) {
+  try {
+    const feedback = await db('feedback')
+      .where({ matchId, hashedUserId })
+      .first();
+    return !!feedback;
+  } catch (error) {
+    console.error('Error checking existing feedback:', error);
+    throw error;
+  }
+}
+
+module.exports = { 
+  db, 
+  saveMatchData, 
+  saveUserFeedback, 
+  fetchMatchData, 
+  checkExistingFeedback 
+};
